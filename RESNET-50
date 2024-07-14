@@ -1,0 +1,266 @@
+
+
+# Mount Google Drive
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Install necessary libraries
+!pip install geotile tifffile matplotlib tensorflow scikit-learn matplotlib-venn libarchive patool cartopy earthpy rasterio delayed scikit-plot
+!apt-get -qq install -y libfluidsynth1 libarchive-dev graphviz
+!pip install pydot
+!sudo apt-get install graphviz
+
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+import keras
+from keras import Sequential
+from keras.layers import Conv1D, MaxPooling1D, Dense, Dropout, Flatten, Input, GlobalMaxPooling1D
+from keras.callbacks import EarlyStopping
+from keras import Model
+import rasterio
+import earthpy.plot as ep
+from keras.utils import to_categorical
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+from matplotlib.colors import from_levels_and_colors
+import seaborn as sns
+import tensorflow_datasets as tfds
+import tensorflow_hub as hub
+from osgeo import gdal
+import skimage.exposure
+import geopandas as gpd
+import earthpy as et
+import earthpy.spatial as es
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.utils import plot_model
+from tensorflow.keras.layers import ZeroPadding2D, Conv2D, BatchNormalization, Activation, Add, AveragePooling2D, MaxPooling2D, Flatten, Dense
+from tensorflow.keras.initializers import glorot_uniform, random_uniform
+from tensorflow.keras.models import Model
+from PIL import Image
+from tifffile import imsave, imwrite
+import json
+import scikitplot as skplt
+from re import X
+from warnings import filters
+import itertools
+from matplotlib.colors import from_levels_and_colors
+
+# Essential and common packages
+import os
+import glob
+import subprocess
+import datetime
+import platform
+from glob import glob
+
+# TensorFlow version check
+print("TensorFlow version:", tf.__version__)
+
+# Define dataset parameters
+dataset_url = '/content/drive/MyDrive/Colab Notebooks/Cuprite_Nevada/ResNet50-Karaj/ResNet50/images'
+batch_size = 32
+img_height = 64
+img_width = 64
+validation_split = 0.2
+rescale = 1.0/255
+
+# Create ImageDataGenerator instances
+datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    validation_split=validation_split,
+    rescale=rescale
+)
+
+# Create train and test datasets
+train_dataset = datagen.flow_from_directory(
+    batch_size=batch_size,
+    directory=dataset_url,
+    shuffle=True,
+    target_size=(img_height, img_width),
+    subset='training',
+    class_mode='categorical'
+)
+
+test_dataset = datagen.flow_from_directory(
+    batch_size=batch_size,
+    directory=dataset_url,
+    shuffle=True,
+    target_size=(img_height, img_width),
+    subset='validation',
+    class_mode='categorical'
+)
+
+# Get a single batch of images
+images, labels = next(train_dataset)
+print("label batch shape: ", labels.shape)
+print("Image batch shape: ", images.shape)
+# Visualize the first image in the batch
+plt.imshow(images[11])
+plt.title("First image in the batch")
+plt.axis('off')
+plt.show()
+
+# Data preparation for the model
+datagen = tf.keras.preprocessing.image.ImageDataGenerator(validation_split=validation_split, rescale=rescale)
+dataset = tf.keras.preprocessing.image_dataset_from_directory(dataset_url, image_size=(img_height, img_width), batch_size=batch_size)
+
+# Train Dataset
+train_dataset = datagen.flow_from_directory(batch_size=batch_size,
+                                            directory=dataset_url,
+                                            shuffle=True,
+                                            target_size=(img_height, img_width),
+                                            subset='training',
+                                            class_mode='categorical')
+
+# Test Dataset
+test_dataset = datagen.flow_from_directory(batch_size=batch_size,
+                                            directory=dataset_url,
+                                            shuffle=True,
+                                            target_size=(img_height, img_width),
+                                            subset='validation',
+                                            class_mode='categorical')
+
+# Visualization of input datasets
+class_names = dataset.class_names
+plt.figure(figsize=(6,7))
+for images, labels in dataset.take(1):
+  for i in range(9):
+    ax = plt.subplot(3, 3, i + 1)
+    plt.imshow(images[i].numpy().astype("int16"))
+    plt.title(class_names[labels[i]])
+    plt.axis("off")
+
+# Define the identity block for ResNet
+def identity_block(X, f, filters, training=True, initializer=tf.keras.initializers.RandomUniform()):
+    F1, F2, F3 = filters
+    X_shortcut = X
+
+    X = tf.keras.layers.Conv2D(filters=F1, kernel_size=(1, 1), strides=(1, 1), padding='valid', kernel_initializer=initializer)(X)
+    X = tf.keras.layers.BatchNormalization(axis=3)(X, training=training)
+    X = tf.keras.layers.Activation('relu')(X)
+
+    X = tf.keras.layers.Conv2D(filters=F2, kernel_size=(f, f), strides=(1, 1), padding='same', kernel_initializer=initializer)(X)
+    X = tf.keras.layers.BatchNormalization(axis=3)(X, training=training)
+    X = tf.keras.layers.Activation('relu')(X)
+
+    X = tf.keras.layers.Conv2D(filters=F3, kernel_size=(1, 1), strides=(1, 1), padding='valid', kernel_initializer=initializer)(X)
+    X = tf.keras.layers.BatchNormalization(axis=3)(X, training=training)
+
+    X = tf.keras.layers.Add()([X, X_shortcut])
+    X = tf.keras.layers.Activation('relu')(X)
+
+    return X
+
+# Define the convolutional block for ResNet
+def convolutional_block(X, f, filters, s=2, training=True, initializer=glorot_uniform):
+    F1, F2, F3 = filters
+    X_shortcut = X
+
+    X = Conv2D(filters=F1, kernel_size=1, strides=(s, s), padding='valid', kernel_initializer=initializer(seed=0))(X)
+    X = BatchNormalization(axis=3)(X, training=training)
+    X = Activation('relu')(X)
+
+    X = Conv2D(filters=F2, kernel_size=(f, f), strides=(1, 1), padding='same', kernel_initializer=initializer(seed=0))(X)
+    X = BatchNormalization(axis=3)(X, training=training)
+    X = Activation('relu')(X)
+
+    X = Conv2D(filters=F3, kernel_size=1, strides=(1, 1), padding='valid', kernel_initializer=initializer(seed=0))(X)
+    X = BatchNormalization(axis=3)(X, training=training)
+
+    X_shortcut = Conv2D(F3, (1, 1), strides=(s, s), padding='valid', kernel_initializer=initializer(seed=0))(X_shortcut)
+    X_shortcut = BatchNormalization(axis=3)(X_shortcut, training=training)
+
+    X = Add()([X, X_shortcut])
+    X = Activation('relu')(X)
+
+    return X
+
+# Define ResNet50 architecture
+def ResNet50(input_shape=(64, 64, 3), classes=10):
+    X_input = Input(input_shape)
+    X = ZeroPadding2D((3, 3))(X_input)
+
+    X = Conv2D(64, (7, 7), strides=(2, 2), kernel_initializer=glorot_uniform(seed=0))(X)
+    X = BatchNormalization(axis=3)(X)
+    X = Activation('relu')(X)
+    X = MaxPooling2D((3, 3), strides=(2, 2))(X)
+
+    X = convolutional_block(X, f=3, filters=[64, 64, 256], s=1)
+    X = identity_block(X, 3, [64, 64, 256])
+    X = identity_block(X, 3, [64, 64, 256])
+
+    X = convolutional_block(X, f=3, filters=[128, 128, 512], s=2)
+    X = identity_block(X, 3, [128, 128, 512])
+    X = identity_block(X, 3, [128, 128, 512])
+    X = identity_block(X, 3, [128, 128, 512])
+
+    X = convolutional_block(X, f=3, filters=[256, 256, 1024], s=2)
+    X = identity_block(X, 3, [256, 256, 1024])
+    X = identity_block(X, 3, [256, 256, 1024])
+    X = identity_block(X, 3, [256, 256, 1024])
+    X = identity_block(X, 3, [256, 256, 1024])
+    X = identity_block(X, 3, [256, 256, 1024])
+
+    X = convolutional_block(X, f=3, filters=[512, 512, 2048], s=2)
+    X = identity_block(X, 3, [512, 512, 2048])
+    X = identity_block(X, 3, [512, 512, 2048])
+
+    X = AveragePooling2D(pool_size=(2, 2), padding='same')(X)
+
+    X = Flatten()(X)
+    X = Dense(classes, activation='softmax', kernel_initializer=glorot_uniform(seed=0))(X)
+
+    model = Model(inputs=X_input, outputs=X, name='ResNet50')
+
+    return model
+
+# Build and compile the ResNet50 model
+model = ResNet50(input_shape=(img_height, img_width, 3), classes=train_dataset.num_classes)
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.summary()
+
+# Train the model
+history = model.fit(train_dataset, validation_data=test_dataset, epochs=10)
+
+# Save the trained model
+model.save('/content/drive/MyDrive/Colab Notebooks/Cuprite_Nevada/ResNet50-Karaj/ResNet50/model.h5')
+
+# Evaluate the model
+model = tf.keras.models.load_model('/content/drive/MyDrive/Colab Notebooks/Cuprite_Nevada/ResNet50-Karaj/ResNet50/model.h5')
+evaluation = model.evaluate(test_dataset)
+print('Model accuracy: {:.2f}%'.format(evaluation[1] * 100))
+
+# Plot training history
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+epochs_range = range(len(acc))
+
+plt.figure(figsize=(12, 8))
+plt.subplot(1, 2, 1)
+plt.plot(epochs_range, acc, label='Training Accuracy')
+plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+plt.legend(loc='lower right')
+plt.title('Training and Validation Accuracy')
+
+plt.subplot(1, 2, 2)
+plt.plot(epochs_range, loss, label='Training Loss')
+plt.plot(epochs_range, val_loss, label='Validation Loss')
+plt.legend(loc='upper right')
+plt.title('Training and Validation Loss')
+plt.show()
+
+# Predict and plot confusion matrix
+predictions = model.predict(test_dataset)
+y_pred = np.argmax(predictions, axis=1)
+y_true = test_dataset.classes
+
+cm = confusion_matrix(y_true, y_pred)
+cmd = ConfusionMatrixDisplay(cm, display_labels=class_names)
+cmd.plot()
+plt.show()
