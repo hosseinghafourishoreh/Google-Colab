@@ -1,4 +1,7 @@
-
+/*
+Code by Hossein Ghafouri Shoreh
+You are free to use and modify this code for academic and non-academic purposes. 
+*/
 
 # Mount Google Drive
 from google.colab import drive
