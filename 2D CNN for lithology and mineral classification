@@ -1,13 +1,20 @@
-# Cell 1: Mount Google Drive
+
+/*
+Code by Hossein Ghafouri Shoreh
+You are free to use and modify this code for academic and non-academic purposes. 
+*/
+
+
+  # Cell 1: Mount Google Drive
 from google.colab import drive
 drive.mount('/content/drive')
 
-# Cell 2: Install necessary libraries
+  # Cell 2: Install necessary libraries
 !pip install rasterio
 !pip install earthpy
 !pip install tensorflow tensorflow_addons tensorflow_datasets tensorflow_hub numpy matplotlib seaborn sklearn
 
-# Cell 3: Import libraries
+  # Cell 3: Import libraries
 import pandas as pd
 import numpy as np
 import keras
@@ -55,7 +62,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv1D, MaxPooling1D, GlobalMaxPooling1D, Dense, Dropout, BatchNormalization, Input, Lambda
 import tensorflow.keras.backend as K
 
-# Cell 4: Set parameters
+  # Cell 4: Set parameters
 FEATURES = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20']
 LABEL = ['ID_CLASS']
 SPLIT = ['sample']
@@ -66,7 +73,7 @@ PALETTE = ['#FF0000','#d20cf5','#FFFF00','#000080','#228B22']
 SAMPLE_PATH = '/content/drive/MyDrive/Colab Notebooks/Karaj_FirstPaper/CNN_KARAJ1000.csv'
 IMAGE_PATH = '/content/drive/MyDrive/Colab Notebooks/Karaj_FirstPaper/DATASET20.tif'
 
-# Cell 5: Load and visualize data
+  # Cell 5: Load and visualize data
 dataset = gdal.Open(r'/content/drive/MyDrive/Colab Notebooks/Karaj_FirstPaper/DATASET20.tif')
 print(dataset.RasterCount)
 
@@ -85,7 +92,7 @@ f = plt.figure()
 plt.imshow(img)
 plt.colorbar()
 
-# Cell 6: Load image
+  # Cell 6: Load image
 image = rasterio.open(IMAGE_PATH)
 bandNum = image.count
 height = image.height
@@ -96,12 +103,12 @@ shape = (height, width)
 image_vis = []
 plot_size = (9, 9)
 
-# Cell 7: Load sample data
+  # Cell 7: Load sample data
 samples = pd.read_csv(SAMPLE_PATH)
 sample = samples.sample(frac=1) # Shuffle data
 sample
 
-# Cell 8: Split data into training and testing sets
+  # Cell 8: Split data into training and testing sets
 train = samples[samples['sample'] == 'train']
 test = samples[samples['sample'] == 'test']
 
@@ -122,11 +129,11 @@ test_output = to_categorical(test_label.to_numpy(), N_CLASSES + 1, dtype=int)
 
 print(f'train features: {train_input.shape}\nTest features: {test_input.shape}\nTrain label: {train_output.shape}\nTest label: {test_output.shape}')
 
-# Cell 9: Normalize data
+  # Cell 9: Normalize data
 train_input = train_input / np.max(train_input)
 test_input = test_input / np.max(test_input)
 
-# Cell 10: Check for NaN and Inf values
+  # Cell 10: Check for NaN and Inf values
 print("NaN values in train_input:", np.isnan(train_input).sum())
 print("NaN values in test_input:", np.isnan(test_input).sum())
 print("Inf values in train_input:", np.isinf(train_input).sum())
@@ -134,11 +141,11 @@ print("Inf values in test_input:", np.isinf(test_input).sum())
 print("Max value in train_input:", np.max(train_input))
 print("Min value in train_input:", np.min(train_input))
 
-# Cell 11: Repeat NaN check
+  # Cell 11: Repeat NaN check
 print(f"NaN values in train_input: {np.isnan(train_input).sum()}")
 print(f"NaN values in test_input: {np.isnan(test_input).sum()}")
 
-# Cell 12: Define and compile the model
+  # Cell 12: Define and compile the model
 def print_shape(x):
     print(K.int_shape(x))
     return x
@@ -178,19 +185,19 @@ model = Sequential([
 
 model.summary()
 
-# Cell 13: Check output shapes
+  # Cell 13: Check output shapes
 print("Shape of train_output:", train_output.shape)
 print("Shape of test_output:", test_output.shape)
 print("Unique values in train_output:", np.unique(train_output))
 print("Unique values in test_output:", np.unique(test_output))
 
-# Cell 14: Train the model
+  # Cell 14: Train the model
 model.compile(optimizer='Adam', loss='CategoricalCrossentropy', metrics=['accuracy'])
 
 stop = EarlyStopping(monitor='val_loss', patience=16)
 result = model.fit(x=train_input, y=train_output, validation_data=(test_input, test_output), batch_size=8, callbacks=[stop], epochs=45)
 
-# Cell 15: Plot training history
+  # Cell 15: Plot training history
 history = pd.DataFrame(result.history)
 plt.figure(figsize=(8, 6))
 plt.plot(range(len(history['accuracy'].values.tolist())), history['accuracy'].values.tolist(), label='Train_Accuracy')
@@ -202,7 +209,7 @@ plt.ylabel('Value')
 plt.legend()
 plt.show()
 
-# Cell 16: Evaluate the model
+  # Cell 16: Evaluate the model
 prediction = np.argmax(model.predict(test_input), 1).flatten()
 label = np.argmax(test_output, 1).flatten()
 
@@ -212,7 +219,7 @@ cm.plot()
 
 print(classification_report(label, prediction))
 
-# Cell 17: Predict and visualize on the full image
+  # Cell 17: Predict and visualize on the full image
 image_input = []
 for x in range(20):
     image_input.append(image.read(x + 1))
@@ -225,7 +232,7 @@ prediction = prediction.reshape(shape[0], shape[1])
 cmap, norm = from_levels_and_colors(CLASSES, PALETTE, extend='max')
 ep.plot_bands(prediction, cmap=cmap, norm=norm, figsize=plot_size)
 
-# Cell 18: Save prediction to a new file
+  # Cell 18: Save prediction to a new file
 save_location = '/content/drive/MyDrive/Colab Notebooks/Cuprite_Nevada/'
 name = 'MPM.tif'
 location = save_location + name
